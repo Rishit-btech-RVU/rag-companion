@@ -11,6 +11,8 @@ import { listSources, deleteSource } from "./sources.js";
 import { parseSubtitleFile, mergeCuesIntoChunks, ingestChunks } from "./ingest.js";
 import { ingestPdfBuffer } from "./pdfIngest.js";
 import { ingestYoutubeUrl } from "./youtubeIngest.js";
+import { ingestPlainText } from "./textIngest.js";
+import { ingestWebUrl } from "./webIngest.js";
 import { getCollection } from "./config.js";
 import { slugify } from "./lib/slug.js";
 
@@ -70,7 +72,6 @@ app.delete("/sources/:sourceId", async (req, res) => {
     res.status(500).json({ error: "internal error deleting source" });
   }
 });
-
 
 app.post("/clips/search", async (req, res) => {
   const { query } = req.body ?? {};
@@ -150,21 +151,41 @@ app.post("/sources/youtube", async (req, res) => {
   }
 });
 
-app.get("/debug/chroma-hosts", async (req, res) => {
-  const candidates = ["chroma-db", "chroma-db-9mtg", "chroma", "chroma-9mtg"];
-  const results = {};
-  await Promise.all(candidates.map(async (host) => {
-    try {
-      const r = await fetch(`http://${host}:8000/api/v2/heartbeat`, { signal: AbortSignal.timeout(4000) });
-      results[host] = r.ok ? "OK" : `HTTP ${r.status}`;
-    } catch (e) {
-      results[host] = `FAIL: ${e.message} | cause: ${e.cause?.code || e.cause?.message || String(e.cause)}`;
-    }
-  }));
-  res.json(results);
+app.post("/sources/text", async (req, res) => {
+  const { text, lessonName } = req.body ?? {};
+  if (typeof text !== "string" || text.trim().length === 0) {
+    return res.status(400).json({ error: "body must include a non-empty string `text`" });
+  }
+  if (!lessonName || !lessonName.trim()) {
+    return res.status(400).json({ error: "body must include `lessonName`" });
+  }
+  try {
+    const collection = await getCollection();
+    const sourceId = slugify(lessonName);
+    const result = await ingestPlainText({ text, lessonName, sourceId, collection });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || "internal error ingesting text" });
+  }
 });
 
-
+app.post("/sources/web", async (req, res) => {
+  const { url, lessonName } = req.body ?? {};
+  if (typeof url !== "string" || url.trim().length === 0) {
+    return res.status(400).json({ error: "body must include a non-empty string `url`" });
+  }
+  try {
+    const collection = await getCollection();
+    const resolvedLessonName = lessonName?.trim() || new URL(url).hostname;
+    const sourceId = slugify(resolvedLessonName);
+    const result = await ingestWebUrl({ url, lessonName: resolvedLessonName, sourceId, collection });
+    res.json({ success: true, ...result, lessonName: resolvedLessonName });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || "internal error ingesting web page" });
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`RAG API listening on http://localhost:${PORT}`);
