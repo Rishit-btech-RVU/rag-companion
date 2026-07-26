@@ -40,7 +40,7 @@ export async function ingestYoutubeUrl({ url, lessonName, collection }) {
     chunks,
     lessonName: resolvedLessonName,
     sourceId,
-    sourceType: "video",
+    sourceType: "youtube",
     collection,
   });
 
