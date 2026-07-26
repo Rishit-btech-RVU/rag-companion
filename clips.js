@@ -8,6 +8,7 @@
 
 import { getCollection } from "./config.js";
 import { buildGraph, RECURSION_LIMIT } from "./graph.js";
+import { EXACT_LOCATOR_SOURCE_TYPES } from "./lib/time.js";
 
 const BROWSE_FETCH_CAP = 1000; // Chroma get() limit before we sort client-side
 
@@ -46,7 +47,7 @@ export async function searchClips({ query }) {
 
   const clip = JSON.parse(result.response);
   const sourceChunk = result.rankedDocs.find((d) => {
-    const tolerance = d.sourceType === "pdf" ? 0 : 5; // PDF locators are exact page numbers
+    const tolerance = EXACT_LOCATOR_SOURCE_TYPES.has(d.sourceType) ? 0 : 5;
     return clip.startTime >= d.startTime - tolerance && clip.endTime <= d.endTime + tolerance;
   });
 
@@ -55,6 +56,7 @@ export async function searchClips({ query }) {
     lessonName: sourceChunk?.lessonName ?? null,
     videoId: sourceChunk?.videoId ?? null,
     sourceType: sourceChunk?.sourceType ?? null,
+    sourceText: sourceChunk?.text ?? null,
     trace: result.trace,
   };
 }
