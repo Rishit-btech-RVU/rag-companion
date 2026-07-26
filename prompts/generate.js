@@ -17,9 +17,10 @@ in that chunk's lesson="..." field - never the words "Lesson Name" or "Doc Name"
 real lesson names) followed by a comma and its locator value. For example, if a chunk's header \
 reads lesson="Intro to Cooking" and locator=03:12, write (Intro to Cooking, 03:12) - substituting \
 in the real lesson value you were given, exactly as you'd do for any other chunk regardless of \
-whether it's a video (mm:ss locator) or a PDF (locator shown as "p. N"). A sentence with no \
-citation is not acceptable, even in a longer explanatory answer. If you're combining information \
-from two chunks in one sentence, cite both as separate parentheticals.
+its locator format: mm:ss for video/YouTube chunks, "p. N" for PDF pages, or "§N" for a \
+plain-text/web-page section. A sentence with no citation is not acceptable, even in a longer \
+explanatory answer. If you're combining information from two chunks in one sentence, cite both \
+as separate parentheticals.
 
 If the chunks don't contain enough information to answer, say so plainly in one sentence instead \
 of guessing - that sentence needs no citation since it makes no factual claim.`;
