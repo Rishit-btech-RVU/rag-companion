@@ -1,9 +1,27 @@
+# Pings both Render free-tier services often enough that neither sits idle
+# for the 15 minutes that triggers a spin-down: the backend API
+# (rag-course-companion) and Chroma (chroma-db) each have their own
+# independent idle timer, so both need a direct ping - pinging only the
+# backend's /clips route does transitively hit Chroma too (it calls
+# getCollection() under the hood), but if Chroma alone has gone cold, that
+# request just gets slow (up to ~50s) rather than reliably waking it, so we
+# ping both directly instead.
+#
+# This does NOT make Chroma's data durable - a redeploy or Render-initiated
+# restart still wipes the ephemeral filesystem regardless of pinging. It only
+# avoids the specific "went cold from inactivity" case.
+#
+# Setup: Repo Settings -> Secrets and variables -> Actions -> New repository
+# secret, for each of:
+#   RENDER_APP_URL  - the backend's URL, e.g. https://rag-companion.onrender.com
+#   CHROMA_APP_URL  - chroma-db's public URL, e.g. https://chroma-db-9mtg.onrender.com
+# (no trailing slash on either).
 name: Keep Render services alive
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
-  workflow_dispatch: {}
+    - cron: "*/10 * * * *" # every 10 minutes, comfortably under the 15-min idle timeout
+  workflow_dispatch: {} # lets you trigger it manually from the Actions tab too
 
 jobs:
   ping:
