@@ -34,4 +34,3 @@ export async function deleteSource(sourceId) {
   const collection = await getCollection();
   await collection.delete({ where: { videoId: sourceId } });
 }
-
