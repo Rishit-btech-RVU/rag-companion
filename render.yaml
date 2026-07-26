@@ -2,14 +2,33 @@
 # dashboard, pointing at this repo.
 #
 # Two services:
-#   - chroma-db: Chroma's official Docker image, as an internal-only private
-#     service. (Running Chroma via `npx chromadb run` inside the Node service
-#     - the original approach here - fails on Render's Node runtime: the
-#     `chromadb` npm package's native binary requires a newer glibc than
-#     that runtime image ships. The official Docker image sidesteps this
-#     entirely.)
+#   - chroma-db: Chroma's official Docker image. (Running Chroma via
+#     `npx chromadb run` inside the Node service - the original approach
+#     here - fails on Render's Node runtime: the `chromadb` npm package's
+#     native binary requires a newer glibc than that runtime image ships.
+#     The official Docker image sidesteps this entirely.)
 #   - rag-course-companion: the Express API, talking to chroma-db over
-#     Render's private network.
+#     its public HTTPS URL (see below for why not the private network).
+#
+# chroma-db is `type: web`, not `type: pserv` (private service), because
+# Render's private services have no free instance type - only a paid one.
+# That also means it can't be reached over Render's *private* network either:
+# free web services can't receive private-network traffic from another free
+# service (only from paid services/datastores) - so rag-course-companion has
+# to connect over chroma-db's public `.onrender.com` URL instead, with no
+# authentication in front of it. Anyone who finds that URL can read or wipe
+# the ingested data. Fine for a demo; add auth (or upgrade both services to
+# paid plans and switch chroma-db to `type: pserv`) before treating this as a
+# real deployment.
+#
+# CHROMA_HOST/CHROMA_PORT/CHROMA_SSL on rag-course-companion can't be set
+# automatically here: chroma-db's public hostname includes a random suffix
+# Render assigns at creation time (e.g. chroma-db-9mtg.onrender.com), so
+# there's a chicken-and-egg problem within one Blueprint run. After both
+# services are up, manually set on rag-course-companion:
+#   CHROMA_HOST = <chroma-db's public hostname, no "https://" prefix>
+#   CHROMA_PORT = 443
+#   CHROMA_SSL  = true
 #
 # Both are on the FREE plan: no persistent disk, so Chroma's data lives on
 # its container's ephemeral filesystem - wiped on every redeploy/restart, and
@@ -19,11 +38,18 @@
 # chroma-db mounted at /data.
 services:
   - name: chroma-db
-    type: pserv
+    type: web
     runtime: image
     plan: free
     image:
       url: docker.io/chromadb/chroma:latest
+    envVars:
+      # Render defaults to expecting the container's app on port 10000; the
+      # official Chroma image hardcodes 8000 and ignores that, so this has to
+      # be set explicitly or Render's routing won't line up with the port
+      # Chroma is actually listening on.
+      - key: PORT
+        value: "8000"
 
   - name: rag-course-companion
     type: web
@@ -35,8 +61,8 @@ services:
       - key: OPENAI_API_KEY
         sync: false # you'll be prompted for this during Blueprint creation
       - key: CHROMA_HOST
-        fromService:
-          name: chroma-db
-          property: host
+        sync: false # set manually after chroma-db is up - see comment above
       - key: CHROMA_PORT
-        value: "8000"
+        value: "443"
+      - key: CHROMA_SSL
+        value: "true"
