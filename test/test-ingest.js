@@ -11,6 +11,7 @@
 
 import { getCollection, getChroma, COLLECTION_NAME } from "../config.js";
 import { ingestFile } from "../ingest.js";
+import { EXACT_LOCATOR_SOURCE_TYPES } from "../lib/time.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -74,11 +75,12 @@ async function main() {
     chunks.sort((a, b) => a.startTime - b.startTime);
     let prevEnd = -Infinity;
     let rangesOk = true;
-    // PDF chunks are cited by page number, so startTime === endTime there is
-    // correct (not a zero-length bug) - only require endTime > startTime for
-    // video chunks, where they're a real seconds range.
+    // PDF/text/web chunks are cited by an exact page/section index, so
+    // startTime === endTime there is correct (not a zero-length bug) - only
+    // require endTime > startTime for video/YouTube chunks, where they're a
+    // real seconds range.
     for (const c of chunks) {
-      const validRange = c.sourceType === "pdf" ? c.endTime === c.startTime : c.endTime > c.startTime;
+      const validRange = EXACT_LOCATOR_SOURCE_TYPES.has(c.sourceType) ? c.endTime === c.startTime : c.endTime > c.startTime;
       if (!(c.startTime >= 0 && validRange)) rangesOk = false;
       if (c.startTime < prevEnd - 0.001) rangesOk = false; // allow float rounding
       prevEnd = c.endTime;
