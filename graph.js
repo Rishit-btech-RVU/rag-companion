@@ -14,7 +14,7 @@ import { StateGraph, Annotation, START, END } from "@langchain/langgraph";
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { getOpenAI, getCollection, EMBEDDING_MODEL, CHAT_MODEL } from "./config.js";
-import { formatLocator } from "./lib/time.js";
+import { formatLocator, EXACT_LOCATOR_SOURCE_TYPES } from "./lib/time.js";
 import { TRANSFORM_SYSTEM_PROMPT, buildTransformUserPrompt } from "./prompts/transform.js";
 import { RERANK_SYSTEM_PROMPT, buildRerankUserPrompt } from "./prompts/rerank.js";
 import {
@@ -132,7 +132,12 @@ async function retrieveNode(state) {
         include: ["metadatas", "distances", "documents"],
       });
       const rows = result.rows()[0] ?? [];
-      return rows.map((row) => ({ ...row.metadata, distance: row.distance, sourceVariant: variant.type }));
+      return rows.map((row) => ({
+        ...row.metadata,
+        text: row.document,
+        distance: row.distance,
+        sourceVariant: variant.type,
+      }));
     })
   );
 
@@ -314,6 +319,7 @@ export function retryNode(state) {
 
 const TIMESTAMP_RE = /\b\d{1,2}:\d{2}\b/;
 const PAGE_CITATION_RE = /\bp(?:age|g)?\.?\s?\d+\b/i;
+const SECTION_CITATION_RE = /§\s?\d+/;
 // Heuristic "sensitive content" patterns this course-QA bot should never echo:
 // API-key-looking tokens, SSNs, and credit-card-looking digit runs.
 const SENSITIVE_PATTERNS = [/\bsk-[A-Za-z0-9]{16,}\b/, /\b\d{3}-\d{2}-\d{4}\b/, /\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b/];
@@ -340,15 +346,15 @@ export function checkGuardrail(state) {
     const result = ClipResultSchema.safeParse(parsed);
     if (!result.success) return { ok: false, reason: "clip response did not match the expected shape" };
     const withinAnyChunk = state.rankedDocs.some((d) => {
-      // PDF locators are exact page numbers, not a seconds range - no slack.
-      const tolerance = d.sourceType === "pdf" ? 0 : 5;
+      const tolerance = EXACT_LOCATOR_SOURCE_TYPES.has(d.sourceType) ? 0 : 5;
       return parsed.startTime >= d.startTime - tolerance && parsed.endTime <= d.endTime + tolerance;
     });
     if (!withinAnyChunk) return { ok: false, reason: "clip timestamps don't fall within any ranked chunk" };
     return { ok: true };
   }
 
-  const hasTimestamp = TIMESTAMP_RE.test(state.response) || PAGE_CITATION_RE.test(state.response);
+  const hasTimestamp =
+    TIMESTAMP_RE.test(state.response) || PAGE_CITATION_RE.test(state.response) || SECTION_CITATION_RE.test(state.response);
   const hasLessonMention = state.rankedDocs.some((d) =>
     state.response.toLowerCase().includes(d.lessonName.toLowerCase())
   );
@@ -416,5 +422,15 @@ export const RECURSION_LIMIT = 6 * (MAX_RETRIES + 1) + MAX_RETRIES + 10;
 export async function runQuery(query) {
   const graph = buildGraph({ mode: "answer" });
   const result = await graph.invoke({ query, mode: "answer" }, { recursionLimit: RECURSION_LIMIT });
-  return { response: result.response, trace: result.trace };
+  const sources = result.rankedDocs.map((d) => ({
+    lessonName: d.lessonName,
+    locator: formatLocator(d),
+    text: d.text,
+    sourceType: d.sourceType,
+    // Lets the frontend build a "jump to this exact moment" link for
+    // YouTube sources specifically (videoId is stored as `yt-<id>`).
+    youtubeVideoId: d.sourceType === "youtube" ? d.videoId?.replace(/^yt-/, "") : undefined,
+    startTime: d.startTime,
+  }));
+  return { response: result.response, trace: result.trace, sources };
 }
